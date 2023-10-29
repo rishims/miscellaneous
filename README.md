@@ -3,13 +3,13 @@ This repository contains code for some miscellaneous projects I have conducted e
 
 Note: this is not a complete collection of my work and I am still in the process of adding more projects to this repository!
 
-# Password Generator
+## Password Generator
 This is a random password generator I programmed in Java that creates a random password based on user provided specifications. A good way to get comfortable with ASCII!
 
-# Spotify Listens
+## Spotify Listens
 This was my final project for my Data Analysis & Exploration class, where I looked at relationships between variables such as track length, danceability, energy, and more and determined if these variables could be used to predict the popularity or number of listens for a track on Spotify. I used statistical techniques such as bootstrapping, ANOVAS, linear models, and regression to accomplish this.
 
-# Clustering
+## Clustering
 In this project, the main task I attempted was to cluster a set of data according to an attribute. This was achieved through a variety of clustering algorithms, from agglomerative hierarchical clustering methods to k-means clustering. The methodology of my main and helper functions is explained below.
 
 Note: The purpose of the program is to cluster data. As such, minimal error checking is implemented in the program as this may crowd the code and slow the clustering process. It is assumed the user will obey the provided instructions when entering input in the terminal.
