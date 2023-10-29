@@ -14,6 +14,8 @@ In this project, the main task I attempted was to cluster a set of data accordin
 
 Note: The purpose of the program is to cluster data. As such, minimal error checking is implemented in the program as this may crowd the code and slow the clustering process. It is assumed the user will obey the provided instructions when entering input in the terminal.
 
+You can try the program using the students.csv file in the folder!
+
 Clustering Methods:
 
 singleLinkage Clustering:
