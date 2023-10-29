@@ -1,0 +1,359 @@
+---
+title: "Final Project for S&DS 230"
+author: "Rishi Shah"
+date: "May 6, 2023"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Spotify is a Swedish-based audio streaming platform that has attained worldwide acclaim and has revolutionized the way millions of people listen to music. With over 515 million users and over 100 millions tracks, Spotify is the most popular and robust audio streaming platform on the planet. As the go-to destination for music, a major task for Spotify is curating the best playlists and song recommendations that match a user's listening patterns. As such, Spotify analyzes massive amounts of data, even calculating how "danceable" or energetic a track is as part of its large pool of metrics used to rank tracks. My goal for this project is to analyze relationships between variables monitored by Spotify as rankings for its tracks, and determine if combinations of these variables are good at predicting metrics such as a track's popularity. I imagine such analysis can be useful for Spotify to deliver the best user experience.
+
+## Data Overview and Cleaning
+
+This dataset contains 23 variables that provide information regarding the song and that quantify various characteristics of the track. I am choosing to include and analyse only of the variables as those are the only ones relevant to my analysis, which have been described below:
+
+*I will be focusing my analysis on the data specifically from 2020, as this allows us to use a more narrow and specific set of datapoints, ensuring that my data is not too unwieldy. However, just for the permutation test I do a year-wise comparison of differences in the mean track popularity from 2018 to 2019, as I was curious to see if this varies over any randomly given 2 years.* 
+
+Continuous Variables:
+
+- `acousticness`: the relative metric of the track being acoustic, (Ranges from 0 to 1)
+- `danceability`: the relative measurement of the track being danceable, (Ranges from 0 to 1)
+- `energy`: the energy of the track, (Ranges from 0 to 1)
+- `duration_ms`: length of the track in milliseconds (ms)
+- `instrumentalness`:, the relative ratio of the track being instrumental, (Ranges from 0 to 1)
+- `valence`: the positiveness of the track, (Ranges from 0 to 1)
+- `track_popularity`: Song Popularity (0 to 100, higher is better)
+- `tempo`: tempo of the track in Beat Per Minute (BPM), (Float typically ranging from 50 to 150)
+- `liveness`: relative duration of the track sounding as a live performance, (Ranges from 0 to 1)
+- `loudness`: relative loudness of the track in decibel (dB), (ranging from -60 to 0)
+- `speechiness`: relative length of the track containing any kind of human voice, (Ranges from 0 to 1)
+- `year`: The release year of track, (Ranges from 1921 to 2020)
+- `track_id`: The unique identifier for the track
+
+Categorical Variables:
+
+- `playlist_genre`: The genre of the track (one of six categories, namely latin, r&b, pop, rock, rap, and edm)
+- `key`: The primary key of the track encoded as integers in between 0 and 11 (starting on C as 0, C# as 1 and so on…)
+- `track_artist`: The artists credited for the track
+- `release_date`: Date of release mostly in yyyy-mm-dd format, however precision of date may vary
+- `track_name`: The name of the song
+- `mode`: modality of the track, indicates whether the track starts with a major (1) chord progression or a minor (0)
+
+```{r, echo = TRUE, include = FALSE}
+# Load all potentially necessary libraries and functions
+library(car)
+library(leaps)
+library(lubridate)
+library(rvest)
+library(olsrr)
+library(corrplot)
+library(leaps)
+library(MASS)
+source("http://www.reuningscherer.net/s&ds230/Rfuncs/regJDRS.txt")
+```
+
+Below I conduct my data cleaning process, describing each step as a comment. My dataset was relatively clean but I still made necessary adjustments. I used `substring()` in lieu of `gsub()`. As a separate note, I have loaded all libraries in my RMarkdown code, but to save space here I have not included the code.
+
+```{r, warning = FALSE}
+# Read in data
+spotify <- read.csv("spotify.csv")
+# Only use complete observations (i.e., remove any rows with missing observations)
+spotify <- spotify[complete.cases(spotify),]
+spotify <- spotify[spotify$playlist_genre != "",]
+# Dropping Rows: There are songs with zero tempo but with a relatively high popularity in some cases. Similarly, I remove observations with 0 danceability and 0 speechiness. It was found out that those 'zero tempo songs' are not real songs but noises or sounds. They are highly popular because they seem to have a positive effecton a restful sleep or for relaxation. As my goal is to focus on real songs, those data has been removed from the dataset.
+spotify <- spotify[spotify$tempo > 0, ]
+spotify <- spotify[spotify$danceability > 0, ]
+spotify <- spotify[spotify$speechiness > 0, ]
+# Remove duplicates by unique id, since it was noticed that there were a a lot of duplicate observations that could affect my results
+spotify <- spotify[!duplicated(spotify$track_id), ]
+# Recoding 'key' variable
+spotify$key <- recode(spotify$key, "0 = 'C'; 1 = 'C#'; 2 = 'D'; 3 = 'E_flat'; 4 = 'E'; 5 = 'F'; 6 = 'G_flat'; 7 = 'G'; 8 = 'A_flat'; 9 = 'A'; 10 = 'B_flat'; 11 = 'B'")
+# Recoding the mode variable
+spotify$mode <- recode(spotify$mode, "0 = 'Minor'; 1 = 'Major'")
+# Standardizing units of duration to seconds and removing the outlier
+spotify$duration <- spotify$duration_ms/1000
+spotify <- spotify[spotify$duration < 500, ]
+# Creating a Year Published System
+spotify$Year <- as.numeric(gsub(".*/", "", spotify$track_album_release_date))
+spotify$Year <- ifelse(spotify$Year > 30 & spotify$Year < 100, spotify$Year+1900, spotify$Year)
+spotify$Year <- ifelse(spotify$Year < 30, spotify$Year+2000, spotify$Year)
+#Subset of 2020 published songs
+spotify_new <- subset(spotify, spotify$Year == 2020)
+```
+
+## Graphics
+
+### Boxplot
+
+I start with analyzing boxplots created from my cleaned data. This boxplot analyzed was that of `track_popularity` (judged on a scale of 1 to 100) by track genre.
+
+```{r}
+boxplot(spotify_new$track_popularity~spotify_new$playlist_genre, main = "Track Popularity by Track Genre", xlab = "Track Genre", ylab = "Track Popularity", col = c("Orange", "Blue", "Purple", "Pink", "Green", "Yellow"))
+means <- tapply(spotify_new$track_popularity, spotify_new$playlist_genre, mean)
+points(means, col = "red", pch = 19, cex = 1.2)
+text(x = c(1:6), y = means - 4.2, labels = round(means,1))
+```
+
+Here I note rather similar ranges for each genre (and no outliers), likely indicating minimal heteroskedacity. Pop also seems to be the most popular genre with the highest mean popularity rating.
+
+### Histogram
+
+This histogram is the distribution of tracks' song `duration`. The following distribution is not only interesting for its slightly right-skewed nature, but also seems to highlight a "sweet spot" for artist's music timing (150-250 seconds). This would make intuitive sense as listeners would likely prefer songs that are neither too long or short.
+
+```{r, fig.dim = c(6, 4)}
+hist(spotify_new$duration, col = "gold", main = "Histogram of Spotify Songs' Duration", xlab = "Duration (seconds)", breaks = 40)
+```
+
+### Scatterplot (Correlation Plot)
+
+I believe making a matrix correlation plot here is useful as it highlights the significance of correlations between my noted continuous variables.
+
+So, let's take a look at the pairwise correlations between all of the continuous variables in the model for the year 2020 (if all years were included, the data would be too large and messy) using the `corrplot.mixed()` function:
+
+```{r, warning=FALSE}
+spotify_cont <- spotify_new[,c(4, 12, 13, 15, 17:22, 24)]
+corrplot.mixed(cor(spotify_cont), lower.col = "black", upper = "ellipse", tl.col = "black", number.cex = .7, tl.pos = "lt", tl.cex = .7, p.mat = cor.mtest(spotify_cont, conf.level = .95)$p, sig.level = .05)
+pairsJDRS(spotify_cont)
+
+plot(spotify_new$energy, spotify_new$loudness, col = "red", ylab = "Loudness (dB)", xlab = "Energy Level")
+mtext("Loudness vs Energy of 2020 Songs", line = 1)
+mtext(paste("Sample Correlation =", round(cor(spotify_new$energy, spotify_new$loudness), 3)), cex = 0.9, line = 0)
+```
+
+This is interesting - it looks like the strongest correlations are between `energy` and `loudness` (r = 0.75), `acousticness` and `energy` (r = -0.59). The scatterplot of energy vs loudness confirms this strong, positive correlation of r = 0.75 between the `energy` and `loudness` factors, as noted by the roughly linear pattern with positive trend. *I'll use bootstrapping in a later section to generate a confidence interval for the true correlation between `energy` and `loudness`.*
+
+### Quantile Plot and Residual Plot
+
+```{r}
+qqPlot(spotify_new$track_popularity, main = "2020 Track Popularity", ylab = "Track Popularity")
+```
+I plan on using track popularity as my response variable in later sections, so it made sense to create a normal quantile plot of track_popularity. From this quantile plot, mostly all the datapoints lie within the blue confidence intervals, indicating that the data is approximately normally distributed. Even though I can assume normality from this plot, I will still attempt to find lambda and apply a boxcox transformation later in the MLR section.
+
+## Basic Tests
+
+### T-Test
+
+Let's run a two-sample t-test to determine whether the means of two populations (in this case, the values of the valence across modes) are equivalent.
+
+```{r}
+t.test(spotify_new$valence ~ spotify_new$mode)
+```
+
+Since the p-value (0.8942) is greater than the alpha level (0.05), I fail to reject the null hypothesis, meaning that there is not a statistically significant difference in the valence, or positiveness of a track, between tracks that begin with a major chord progression and those that begin with a minor chord progression.
+
+### Correlation Bootstrap
+
+Let's now run a correlation test to understand the strength of association between the values of `energy` and `loudness` for 2020 (continued from the Scatterplots section).
+
+```{r}
+cor1 <- cor.test(spotify_new$energy, spotify_new$loudness)
+cor1
+```
+
+Since the p-value is very low (less than 2.2e-16) and close to 0, I can reject the null hypothesis and conclude that the true correlation is not equal to 0 and statistically significant. From the confidence interval, I know with 95% confidence that the true correlation is between 0.714 and 0.783; moreover, as 0 is not in this interval, the correlation must be different from 0 with statistical significance.
+
+### Bootstrap
+
+I will now utilize bootstrapping to derive an estimate of the correlation between the `energy` and `loudness` of tracks for the entire population of tracks created in 2020.
+
+```{r}
+N <- nrow(spotify_new)
+n_samp <- 10000
+
+corResults <- rep(NA, n_samp)
+
+for (i in 1:n_samp) {
+  s <- sample(1:N, N, replace = T)
+  fakedata <- spotify_new[s, ]
+  corResults[i] <- cor(fakedata$energy, fakedata$loudness)
+}
+
+print("Bootstrapped CI:")
+(ci_r <- quantile(corResults, c(0.025, .975)))
+print("Theoretical CI:")
+cor1$conf.in
+
+hist(corResults, breaks = 60, main = "Correlations with Bootstrap", xlab = "Sample Correlations", col = "Red")
+abline(v = cor.test(spotify_new$energy, spotify_new$loudness)$conf.int, col = "Blue", lwd = 5, lty = 1)
+abline(v = ci_r, col = "Orange", lwd = 5, lty = 2)
+legend("topleft", c("Theoretical CI", "Bootstrapped CI"), col = c("Blue", "Orange"), lwd = 5, lty = c(1, 2))
+```
+
+For the correlation, the bootstrapped CI has a slightly larger range than the theoretical CI. Since the ranges for correlation in both the theoretical CI and bootstrapped CI are far from 0, I are 95% confident that the true correlation between energy and loudness is in the interval 0.71 and 0.78, which indicates that the correlation is high.
+
+### Permutation Test
+
+The following permutation test was done to compare if there was a significant difference between the mean track popularity in 2018 and 2019. The null hypothesis notes that there is not a significant difference between the mean track popularity from 2018 to 2019. Conversely, the alternative hypothesis states that there is a statistically significant difference in the mean track popularity improvement from 2018 to 2019.
+
+```{r}
+spotify_test <- subset(spotify, spotify$Year == 2018 | spotify$Year == 2019)
+actualdiff <- mean(spotify_test$track_popularity[spotify_test$Year==2018]) - mean(spotify_test$track_popularity[spotify_test$Year==2019])
+
+N <- 10000
+diffvals <- rep(NA, N)
+for (i in 1:N) {
+  fakeyear <- sample(spotify_test$Year)
+  diffvals[i] <- mean(spotify_test$track_popularity[fakeyear == 2018]) - mean(spotify_test$track_popularity[fakeyear == 2019])
+}
+hist(diffvals, col = "yellow", main = "Permuted Sample Means Diff in Genres", xlab = "Track Popularity", breaks = 50, xlim = c(-5,1))
+abline(v = actualdiff, col = "blue", lwd = 3)
+text(actualdiff+0.3, 250, paste("Actual Diff in Means =", round(actualdiff,2)),srt
+= 90)
+(mean(abs(diffvals) >= abs(actualdiff)))
+```
+
+My null hypothesis is that the means in 2018 and 2019 are even. I note that the p-value is approximately 0 (< 0.05), indicating that I can reject the null hypothesis and thus conclude that there is a statistically significant difference between the mean track popularity between 2018 and 2019.
+
+## ANOVA and ANCOVA
+
+I will be performing two advanced techniques, namely ANOVA and ANCOVA.
+
+### ANOVA
+
+Let's do a one-way ANOVA comparing mean track popularity across track genres for 2020.
+
+Before I start, let's see if the equal variances assumption of ANOVA is met:
+
+```{r}
+print("SD by Genre")
+(sds <- tapply(spotify_new$track_popularity, spotify_new$playlist_genre, sd))
+print("Ratio of Max/Min Sample SD")
+round(max(sds)/min(sds), 1)
+```
+
+Since the ratio of the largest SD to the smallest SD is less than 2 (1.3), I can reasonably assume that the equal variances assumption of ANOVA is met. Great, now let's perform the actual one-way ANOVA test using the `aov()` function:
+
+```{r}
+aov1 <- aov(spotify_new$track_popularity ~ spotify_new$playlist_genre)
+summary(aov1)
+```
+
+The p-value for the test of significance is 4.91e-13 which is less than any reasonable alpha (say 0.05), so I can conclude that the mean track popularity is not the same across track genres. There were 6 genres and 625 complete observations, so I should have 6 - 1 = 5 degrees of freedom associated with genre and 625 - 6 = 619 degrees of freedom associated with errors (residuals), which are the values reported by the test.
+
+Let's take a look at the family-wise confidence intervals to see if there are any statistically significant pairwise differences in popularity between genres using the `TukeyHSD()` function:
+
+```{r}
+TukeyHSD(aov1)
+par(mar = c(5, 11, 4, 1))
+plot(TukeyHSD(aov1), las = 1)
+```
+
+The Tukey confidence intervals find the following groups are statistically significantly different from each other because their adjusted p-values are less than the typical threshold of 0.05 (i.e., because 0 is NOT included in their 95% pairwise confidence intervals): latin-edm, pop-edm, rap-edm, rap-latin, r&b-pop, rock-pop, rock-rap, and rap-r&b. Additionally, the Tukey confidence intervals find that the following group is NOT statistically significantly different from each other because their adjusted p-value is greater than the typical threshold of 0.05 (i.e., because 0 IS included in their 95% pairwise confidence intervals): r&b-edm, rock-edm, pop-latin, r&b-latin, rock-latin, rap-pop, rock-r&b.
+
+Now, let's take a look at the distribution of the residuals from my model using the `myResPlots2()` function:
+
+```{r, fig.height = 8, fig.width = 7}
+par(mfrow = c(2, 1))
+myResPlots2(aov1, label = "Track Popularity")
+```
+
+The normal quantile plot does look linear within the shaded region which suggests that the distribution of residuals is approximately normal inside each group - this matches one of the ANOVA assumptions. In good news, the plot of fits vs. residuals does not show any evidence of heteroskedasticity nor many outliers, meaning that the variances are relatively equal across genres which satisfies the second assumption of one-way ANOVA.
+
+Just out of curiosity, let's run a Kruskal-Wallis non-parametric one-way ANOVA test to see if my model results change significantly from the regular one-way ANOVA (remember that the Kruskal-Wallis test makes no assumption about the Normality of the distribution within each group):
+
+```{r}
+kruskal.test(spotify_new$track_popularity ~ spotify_new$playlist_genre)
+```
+
+The Kruskal-Wallis test, similar to the regular one-way ANOVA, reports a p-value of 9.516e-12 < 0.05, again leading to the conclusion that the mean track popularity is not the same across track genres.
+
+### ANCOVA
+
+The goal here is to fit an ANCOVA model predicting `track_popularity` for tracks made in 2020 based on `danceability`, `playlist_genre`, and the interaction of `danceability` and `genre`. I will also then visually assess the predictive ability of `danceability` and how the song's `genre` affected the popularity of a track. Let's create the ANCOVA model, get linear model and ANOVA summary information for this model, and create a plot of `track_popularity` vs `danceability` with regression lines added for `playlist_genre`:
+
+```{r}
+ancova_mod <- lm(spotify_new$track_popularity ~ spotify_new$playlist_genre*spotify_new$danceability)
+Anova(ancova_mod, type = 'III')
+summary(ancova_mod)
+
+plot(track_popularity ~ danceability, data = spotify_new, col = factor(playlist_genre), pch = 16, cex = 0.8, ylab = "Track Popularity", main = "Track Popularity vs Danceability for each Genre")
+legend("topleft", col = 1:6, legend = levels(factor(spotify_new$playlist_genre)), pch = 16)
+coefs <- coef(ancova_mod)
+
+abline(a = coefs[1], b = coefs[7], col = "black", lwd = 3)
+for (i in 2:6){
+  abline(a = coefs[1] + coefs[i], b = coefs[7] + coefs[i+6], col = i, lwd = 3)
+}
+```
+
+The 'default' reference level in this model is 'playlist_genreedm' (i.e., the edm genre). Overall, the playlist genre of the track and the interaction between playlist genre and danceability are both significant predictors of track popularity at the alpha level of 0.05, but danceability alone is not a significant predictor of track popularity at the alpha level of 0.05. 
+
+The equation for predicting track popularity for tracks in the edm genre is: track popularity = 44.2 - 14.9 * danceability.
+The equation for predicting track popularity for tracks in the latin genre is: track popularity = 26.2 + 21.0 * danceability.
+The equation for predicting track popularity for tracks in the pop genre is: track popularity = 45.4 + 1.25 * danceability.
+The equation for predicting track popularity for tracks in the r&b genre is: track popularity = 20.8 + 25.0 * danceability.
+The equation for predicting track popularity for tracks in the rap genre is: track popularity = 21.0 + 40.2 * danceability.
+The equation for predicting track popularity for tracks in the rock genre is: track popularity = 23.8 + 28.4 * danceability.
+
+From this information, I can clearly see that the only genre with a decrease in popularity as danceability increases is edm (slope = -14.9). The genre with the greatest increase in popularity as danceability increases is rap, with a slope of 40.2. While the pop genre has the highest intercept, it also sees the least change in popularity as its danceability increases, with a slope of only 1.25. It should also be noted that while r&b, rap and rock start off with intercepts in a similar range (20 to 25), rap clearly sees the greatest increase in popularity as danceability increases (slope = 40.2), followed by rock (slope = 28.4) and lastly r&b (slope = 25.0), showing that danceability has the greatest effect on rap then rock then r&b.
+
+
+## Multiple Linear Regression
+
+I chose to create a Generalized Linear Model (GLM) for this section.
+
+To fulfill the objectives of my statistical analysis, I will now be using track_popularity as my response variable in my regression model to see how useful my variables are as predictors. To do this, I will perform backward stepwise regression on track_popularity that includes all of the 10 possible continous predictors. These variables are acousticness, danceability, energy, duration_ms, instrumentalness, valence, tempo, loudness, liveness and speechiness. I will also include 3 of the relevant categorical variables - playlist_genre, key and mode. Additionally, all two-way interactions between playlist_genre and the continuous variables are included. I did not include interactions between key and the continuous variables or mode and the continuous variables. I will then perform manual backwards stepwise regression, removing non-significant terms until all terms have p-values less than 0.05. In this process, I removed interactions BEFORE removing any main effects. 
+
+```{r}
+spotify_new <- spotify_new[spotify_new$track_popularity != 0, ]
+lm1 <- lm(track_popularity ~ key + mode + danceability + energy + loudness + instrumentalness + speechiness + acousticness + duration + valence + tempo + liveness + playlist_genre*danceability + playlist_genre*energy + playlist_genre*loudness + playlist_genre*instrumentalness + playlist_genre*acousticness + playlist_genre*duration + playlist_genre*valence + playlist_genre*tempo + playlist_genre*liveness + playlist_genre*speechiness, data = spotify_new)
+Anova(lm1, type = 3)
+invisible(summary(lm1))
+```
+As we can see, the model here has no significant predictors even though the R^2 iis 0.31 (although adj. R^2 is only 0.21). I now begin by removing non-significant interaction terms one by one, starting with the term with the highest p-value. 
+
+This is what my model looked like after I removed all the non-significant interaction terms but were yet to remove any of the main terms:
+
+```{r}
+lm2 <- lm(track_popularity ~ key + mode + danceability + energy + loudness + instrumentalness + speechiness + acousticness + duration + valence + tempo + liveness + playlist_genre*danceability + playlist_genre*loudness + playlist_genre*duration, data = spotify_new)
+Anova(lm2, type = 3)
+invisible(summary(lm2))
+```
+
+After having removed all the non-signifcant main terms, this is what my final model looks like:
+
+```{r}
+lm3 <- lm(track_popularity ~ danceability + energy + loudness + instrumentalness + speechiness + playlist_genre*danceability + playlist_genre*loudness + playlist_genre*duration, data = spotify_new)
+Anova(lm3, type = 3)
+summary(lm3)
+myResPlots2(lm3)
+```
+
+From the results of the regression model, I can see that I obtained a multiple R^2 of 0.24 and and an adjusted R^2 of 0.205/0.21, which is the same adjusted R^2 I started with. What this means is that only 20.52% of the variability in track popularity can be explained by the predictors. 
+
+Even though I obtained a low R^2 value, the residual plots appear to show approximate normal distribution of residuals, with practically all the residuals lying within the blue confidence intervals and the plot of fits vs residuals having no defined pattern and a very small proportion of outliers. This likely indicates a lack of heteroskedacity, indicating that a transformation is perhaps not necessary. Overall, this suggests that the choice of model was appropriate.
+
+Despite getting residual plots that satisfy my expectations, I still have to reconcile the low R^2 value. A plausible explanation for why this happened is that the variables I have in my dataset likely have high variances in their datapoints. This causes them to have low predictive power for track popularity, something that can also be seen from the low correlations in the corrplot earlier. This suggests that the current variables are not good predictors of popularity as their datapoints are too scattered, and perhaps more metrics need to be added to the dataset.
+
+In terms of specific predictors, I can see that at alpha = 0.05 energy is a significant negative predictor in its own right, with a large negative coefficient (-29.5) and speechiness is a significant positive predictor, having a moderately positive effect (coefficient = 13.4). Instrumentalness also had a slight negative predictor (coef = -6.29) using a signficance level of alpha = 0.10. In the edm genre (default value), at alpha = 0.05, loudness has a very slight positive effect (coef = 1.30) while at alpha = 0.1, danceability has a moderately large negative effect on popularity (coef = -20.4). Interestingly, being in the rap and rock genres has a very large negative effect (coefs = -44.3 and -57.7 respectively) at alpha = 0.05, with a magnitude much larger than the other genres. However, the relatively large positive effects (significant at alpha = 0.05) of duration for these two genres (coefs = 0.0955 and 0.170) likely compensates for this. In these two genres, danceability alsi has a very large positive effect (coefs = 53.2 and 37.4). Along with rap and rock, a increase in danceability also has a very large positive effect on r&b significant at alpha = 0.05 (coef = 38.6) and loudness has the second largest positive effect (coef = 1.71) significant at alpha = 0.1.
+
+Even though it wasn't necessary, I have still applied the BoxCox transformation for experimental purposes as I obtained lambda = 0.86
+
+```{r}
+trans1 <- boxCox(lm3)
+#Figure out what value of lambda (x) gives max value of log-liklihood (y)
+(lambda <- trans1$x[which.max(trans1$y)])
+spotify_new$transPop <- (spotify_new$track_popularity)^lambda
+
+lm4 <- lm(transPop ~ danceability + energy + loudness + instrumentalness + speechiness + playlist_genre*danceability + playlist_genre*loudness + playlist_genre*duration, data = spotify_new)
+Anova(lm4, type = 3)
+summary(lm4)
+```
+
+With the BoxCox transformation, the model fit seems to have improved ever so slightly, with multiple R^2 going to 0.24 and adj R^2 going to 0.207. However, it is a not a very significant improvement and the residual plots, which can be run using the code below are largely identical to the residual plots I had with the untransformed model.
+
+```{r, include = F}
+myResPlots2(lm4)
+```
+
+
+## Conclusion
+
+Overall, it is clear that there are plenty of interesting relationships between the track metrics recorded in this dataset. Particularly, I found that `energy` and `loudness` have a strong, positive, linear relationship with each other, in fact the strongest relationship between variables in this dataset. I also found that the most popular genre is pop and that tracks tends to become more popular as their danceability increases. The R-squared values for some of my linear models predicting variables like danceability are not as high as I would have hoped, but I can propose two main reasons for this: 1.) Danceability may be a difficult vairable to predict in general and 2.) There may exist other variables not contained in this dataset that are better predictors of danceability. This is a true refelction of statistics and data analysis in the real world as data is not always as neat and tidy as I would like it to be, but through creative data cleaning, analysis, and exploration, I can produce meaningful information from my data.
