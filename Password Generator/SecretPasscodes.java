@@ -1,7 +1,6 @@
 /** This program generates a random passcode for the user based on his/her preferences.
  * 
  * @author Rishi Shah
- * @version 10/09/19
  */
 import java.util.Scanner;
 import java.io.File;
